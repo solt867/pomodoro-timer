@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>ポモドーロタイマー（ネオンブルー）</title>
+<title>ポモドーロタイマー（時間設定＋ネオンブルー）</title>
 <style>
   body {
     font-family: 'Segoe UI', sans-serif;
@@ -10,108 +10,59 @@
     color: #e0f7fa;
     text-align: center;
     padding: 20px;
-    transition: background 0.5s ease;
   }
-  body.break-mode {
-    background: linear-gradient(135deg, #003311, #001a0d);
-  }
-  h1 {
-    margin-bottom: 10px;
-    text-shadow: 0 0 10px #00e5ff;
-  }
-  .guide {
-    max-width: 700px;
-    margin: 0 auto 20px auto;
-    text-align: left;
-    background: rgba(255, 255, 255, 0.05);
-    padding: 10px;
-    border-radius: 8px;
-    border: 1px solid rgba(0, 229, 255, 0.3);
-  }
+  h1 { text-shadow: 0 0 10px #00e5ff; }
   textarea, input {
     width: 80%;
     padding: 8px;
     margin: 5px 0;
     border-radius: 8px;
     border: 1px solid rgba(0, 229, 255, 0.5);
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255,255,255,0.05);
     color: #e0f7fa;
-    resize: none;
-    backdrop-filter: blur(5px);
-  }
-  textarea:disabled {
-    opacity: 0.6;
   }
   button {
     padding: 10px 16px;
     margin: 5px;
     border-radius: 8px;
-    border: none;
-    font-weight: bold;
-    cursor: pointer;
-    color: #e0f7fa;
-    background: rgba(0, 229, 255, 0.1);
     border: 1px solid rgba(0, 229, 255, 0.5);
-    box-shadow: 0 0 10px rgba(0, 229, 255, 0.2);
-    transition: all 0.3s ease;
+    background: rgba(0,229,255,0.1);
+    color: #e0f7fa;
+    cursor: pointer;
   }
-  button:hover:not(:disabled) {
-    box-shadow: 0 0 20px #00e5ff;
-    background: rgba(0, 229, 255, 0.2);
-  }
-  button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
+  button:hover:not(:disabled) { background: rgba(0,229,255,0.2); }
+  button:disabled { opacity: 0.4; }
   #timer {
     font-size: 72px;
     margin: 20px 0;
     font-weight: bold;
     color: #00e5ff;
     text-shadow: 0 0 20px #00e5ff;
-    animation: glow 1.5s infinite alternate;
   }
-  @keyframes glow {
-    from { text-shadow: 0 0 10px #00e5ff; }
-    to { text-shadow: 0 0 25px #00ffff; }
-  }
-  table {
-    border-collapse: collapse;
-    width: 90%;
-    margin: 20px auto;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(0, 229, 255, 0.5);
-    backdrop-filter: blur(4px);
-  }
-  th, td {
-    border: 1px solid rgba(0, 229, 255, 0.3);
-    padding: 6px;
-    font-size: 14px;
-  }
-  th {
-    background: rgba(0, 229, 255, 0.2);
-  }
+  table { border-collapse: collapse; width: 90%; margin: 20px auto; }
+  th, td { border: 1px solid rgba(0,229,255,0.3); padding: 6px; }
+  th { background: rgba(0,229,255,0.2); }
 </style>
 </head>
 <body>
+
 <h1>ポモドーロタイマー</h1>
-<div class="guide">
-  <strong>【概要】</strong><br>
-  25分作業＋5分休憩のサイクルで集中力を高めます。<br>
-  <strong>【使い方】</strong><br>
-  1. 作業前に目標を入力してロックします。<br>
-  2. タイマー開始で25分作業。終了時に短いメロディが流れます。<br>
-  3. 終了後に進捗を記入して保存すると休憩5分が自動開始。<br>
-  4. 履歴はブラウザにのみ保存され、他人からは見えません。<br>
-</div>
+
+<label>作業時間（分）：<input id="workMinutes" type="number" value="25" min="1"></label>
+<label>休憩時間（分）：<input id="breakMinutes" type="number" value="5" min="1"></label>
+
+<h3>目標入力</h3>
 <textarea id="goal" rows="2" placeholder="今回の作業目標を入力してください"></textarea><br>
 <button id="lockGoal">🔒 目標をロック</button>
+
 <div id="timer">25:00</div>
 <button id="startPause" disabled>▶ 開始</button>
 <button id="reset">⟲ リセット</button>
+
 <h3>進捗メモ（作業終了後に入力）</h3>
 <textarea id="progress" rows="2" placeholder="作業終了後に進捗を記入してください" disabled></textarea><br>
 <button id="saveProgress" disabled>💾 保存して休憩開始</button>
+
 <h3>履歴</h3>
 <table id="historyTable">
   <thead><tr><th>日時</th><th>目標</th><th>進捗</th></tr></thead>
@@ -119,28 +70,63 @@
 </table>
 <button id="downloadCSV">⬇ CSVダウンロード</button>
 <button id="clearHistory">🗑 履歴を全消去</button>
-<audio id="endSound" preload="auto">
-  <source src="data:audio/mp3;base64,SUQzAwAAAAAAFlRFTkMAAAAwAAAACAAADSxzdXJsAAAAAA==" type="audio/mp3">
-</audio>
+
 <script>
-let timeLeft = 25 * 60;
-let breakTime = 5 * 60;
+// ==== オーディオ（Web Audio API）====
+let audioCtx = null;
+function ensureAudio(){
+  if(!audioCtx){
+    const AC = window.AudioContext || window.webkitAudioContext;
+    audioCtx = new AC();
+  }
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+}
+function playEndMelody(){
+  if(!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const notes = [523.25, 659.25, 783.99];
+  const step = 0.12;
+  const g1 = audioCtx.createGain(); g1.connect(audioCtx.destination);
+  g1.gain.setValueAtTime(0.0001, now);
+  notes.forEach((f,i)=>{
+    const o=audioCtx.createOscillator(); o.type='sine'; o.frequency.value=f; o.connect(g1);
+    const t=now+i*step;
+    g1.gain.exponentialRampToValueAtTime(0.3, t+0.01);
+    g1.gain.exponentialRampToValueAtTime(0.05, t+step-0.02);
+    o.start(t); o.stop(t+step);
+  });
+  const chordStart = now + notes.length*step + 0.05;
+  [523.25,659.25,880.0].forEach(f=>{
+    const o=audioCtx.createOscillator(); const g=audioCtx.createGain();
+    o.type='triangle'; o.frequency.value=f; o.connect(g); g.connect(audioCtx.destination);
+    g.gain.setValueAtTime(0.0001, chordStart);
+    g.gain.exponentialRampToValueAtTime(0.25, chordStart+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, chordStart+0.25);
+    o.start(chordStart); o.stop(chordStart+0.27);
+  });
+}
+
+// ==== タイマー ====
+let timeLeft;
+let breakTime;
 let timerInterval;
 let isRunning = false;
 let mode = 'work';
 let lockedGoal = '';
+
 const timerDisplay = document.getElementById('timer');
 const startPauseBtn = document.getElementById('startPause');
 const goalInput = document.getElementById('goal');
 const lockGoalBtn = document.getElementById('lockGoal');
 const progressInput = document.getElementById('progress');
 const saveProgressBtn = document.getElementById('saveProgress');
-const endSound = document.getElementById('endSound');
+
 function updateDisplay() {
   let min = String(Math.floor(timeLeft / 60)).padStart(2,'0');
   let sec = String(timeLeft % 60).padStart(2,'0');
   timerDisplay.textContent = `${min}:${sec}`;
 }
+
 function startPauseTimer() {
   if (!isRunning) {
     timerInterval = setInterval(() => {
@@ -149,15 +135,14 @@ function startPauseTimer() {
       if (timeLeft <= 0) {
         clearInterval(timerInterval);
         isRunning = false;
-        endSound.play();
+        playEndMelody();
         if (mode === 'work') {
           progressInput.disabled = false;
           saveProgressBtn.disabled = false;
           startPauseBtn.disabled = true;
         } else {
-          document.body.classList.remove('break-mode');
           mode = 'work';
-          timeLeft = 25 * 60;
+          timeLeft = parseInt(document.getElementById('workMinutes').value,10) * 60;
           goalInput.disabled = false;
           goalInput.value = '';
           lockGoalBtn.disabled = false;
@@ -177,12 +162,12 @@ function startPauseTimer() {
     startPauseBtn.textContent = '▶ 開始';
   }
 }
+
 function resetTimer() {
   clearInterval(timerInterval);
   isRunning = false;
   mode = 'work';
-  document.body.classList.remove('break-mode');
-  timeLeft = 25 * 60;
+  timeLeft = parseInt(document.getElementById('workMinutes').value,10) * 60;
   updateDisplay();
   startPauseBtn.textContent = '▶ 開始';
   goalInput.disabled = false;
@@ -191,6 +176,7 @@ function resetTimer() {
   progressInput.disabled = true;
   saveProgressBtn.disabled = true;
 }
+
 lockGoalBtn.onclick = () => {
   lockedGoal = goalInput.value.trim();
   if (!lockedGoal) { alert('目標を入力してください'); return; }
@@ -198,8 +184,13 @@ lockGoalBtn.onclick = () => {
   lockGoalBtn.disabled = true;
   startPauseBtn.disabled = false;
 };
-startPauseBtn.onclick = startPauseTimer;
+
+startPauseBtn.addEventListener('click', () => {
+  ensureAudio();
+  startPauseTimer();
+});
 document.getElementById('reset').onclick = resetTimer;
+
 saveProgressBtn.onclick = () => {
   let progress = progressInput.value.trim();
   let history = JSON.parse(localStorage.getItem('pomodoroHistory') || '[]');
@@ -207,13 +198,13 @@ saveProgressBtn.onclick = () => {
   localStorage.setItem('pomodoroHistory', JSON.stringify(history));
   renderHistory();
   mode = 'break';
-  document.body.classList.add('break-mode');
-  timeLeft = breakTime;
+  timeLeft = parseInt(document.getElementById('breakMinutes').value,10) * 60;
   progressInput.disabled = true;
   saveProgressBtn.disabled = true;
   startPauseBtn.disabled = false;
   startPauseTimer();
 };
+
 function renderHistory() {
   let tbody = document.querySelector('#historyTable tbody');
   tbody.innerHTML = '';
@@ -228,26 +219,34 @@ function renderHistory() {
     tbody.appendChild(tr);
   });
 }
+
 document.getElementById('downloadCSV').onclick = () => {
-  let history = JSON.parse(localStorage.getItem('pomodoroHistory') || '[]');
-  let rows = [['日時','目標','進捗'], ...history];
-  const csv = rows.map(r => r.map(x => '"' + String(x || '').replaceAll('"','""') + '"').join(',')).join('\n');
-  const blob = new Blob([csv], {type:'text/csv'});
+  const history = JSON.parse(localStorage.getItem('pomodoroHistory') || '[]');
+  const rows = [['日時','目標','進捗'], ...history];
+  const csvBody = rows.map(r => r.map(x => `"${String(x||'').replace(/"/g,'""')}"`).join(',')).join('\n');
+  const BOM = '\uFEFF';
+  const blob = new Blob([BOM + csvBody], {type:'text/csv;charset=utf-8;'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
   a.download = 'pomodoro_history.csv';
+  document.body.appendChild(a);
   a.click();
-  URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 };
+
 document.getElementById('clearHistory').onclick = () => {
   if (confirm('履歴を全て削除しますか？')) {
     localStorage.removeItem('pomodoroHistory');
     renderHistory();
   }
 };
+
+timeLeft = parseInt(document.getElementById('workMinutes').value,10) * 60;
 renderHistory();
 updateDisplay();
 </script>
+
 </body>
 </html>
