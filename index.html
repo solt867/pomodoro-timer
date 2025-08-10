@@ -2,54 +2,30 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>ポモドーロタイマー（時間設定＋ネオンブルー）</title>
+<title>ポモドーロタイマー（時間設定＋即反映＋ネオンブルー）</title>
 <style>
-  body {
-    font-family: 'Segoe UI', sans-serif;
-    background: linear-gradient(135deg, #0a0f1e, #000);
-    color: #e0f7fa;
-    text-align: center;
-    padding: 20px;
-  }
-  h1 { text-shadow: 0 0 10px #00e5ff; }
-  textarea, input {
-    width: 80%;
-    padding: 8px;
-    margin: 5px 0;
-    border-radius: 8px;
-    border: 1px solid rgba(0, 229, 255, 0.5);
-    background: rgba(255,255,255,0.05);
-    color: #e0f7fa;
-  }
-  button {
-    padding: 10px 16px;
-    margin: 5px;
-    border-radius: 8px;
-    border: 1px solid rgba(0, 229, 255, 0.5);
-    background: rgba(0,229,255,0.1);
-    color: #e0f7fa;
-    cursor: pointer;
-  }
+  body { font-family: 'Segoe UI', sans-serif; background: linear-gradient(135deg, #0a0f1e, #000); color: #e0f7fa; text-align: center; padding: 20px; }
+  h1 { margin-bottom: 10px; text-shadow: 0 0 10px #00e5ff; }
+  textarea, input { width: 80%; padding: 8px; margin: 5px 0; border-radius: 8px; border: 1px solid rgba(0, 229, 255, 0.5); background: rgba(255,255,255,0.05); color: #e0f7fa; }
+  button { padding: 10px 16px; margin: 5px; border-radius: 8px; border: 1px solid rgba(0, 229, 255, 0.5); background: rgba(0,229,255,0.1); color: #e0f7fa; cursor: pointer; }
   button:hover:not(:disabled) { background: rgba(0,229,255,0.2); }
-  button:disabled { opacity: 0.4; }
-  #timer {
-    font-size: 72px;
-    margin: 20px 0;
-    font-weight: bold;
-    color: #00e5ff;
-    text-shadow: 0 0 20px #00e5ff;
-  }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  #timer { font-size: 72px; margin: 20px 0; font-weight: bold; color: #00e5ff; text-shadow: 0 0 20px #00e5ff; }
   table { border-collapse: collapse; width: 90%; margin: 20px auto; }
-  th, td { border: 1px solid rgba(0,229,255,0.3); padding: 6px; }
-  th { background: rgba(0,229,255,0.2); }
+  th, td { border: 1px solid rgba(0,229,255,.3); padding: 6px; font-size: 14px; }
+  th { background: rgba(0,229,255,.2); }
 </style>
 </head>
 <body>
 
 <h1>ポモドーロタイマー</h1>
 
-<label>作業時間（分）：<input id="workMinutes" type="number" value="25" min="1"></label>
-<label>休憩時間（分）：<input id="breakMinutes" type="number" value="5" min="1"></label>
+<!-- 時間設定 -->
+<div>
+  <label>作業時間（分）：<input id="workMinutes" type="number" value="25" min="1" max="180"></label>
+  <label>休憩時間（分）：<input id="breakMinutes" type="number" value="5"  min="1" max="60"></label>
+  <button id="applySettings">⚙️ 設定を反映</button>
+</div>
 
 <h3>目標入力</h3>
 <textarea id="goal" rows="2" placeholder="今回の作業目標を入力してください"></textarea><br>
@@ -84,7 +60,7 @@ function ensureAudio(){
 function playEndMelody(){
   if(!audioCtx) return;
   const now = audioCtx.currentTime;
-  const notes = [523.25, 659.25, 783.99];
+  const notes = [523.25, 659.25, 783.99]; // C5 E5 G5
   const step = 0.12;
   const g1 = audioCtx.createGain(); g1.connect(audioCtx.destination);
   g1.gain.setValueAtTime(0.0001, now);
@@ -106,27 +82,40 @@ function playEndMelody(){
   });
 }
 
-// ==== タイマー ====
-let timeLeft;
-let breakTime;
+// ==== タイマー状態 ====
 let timerInterval;
 let isRunning = false;
-let mode = 'work';
+let mode = 'work'; // 'work' or 'break'
 let lockedGoal = '';
 
-const timerDisplay = document.getElementById('timer');
-const startPauseBtn = document.getElementById('startPause');
-const goalInput = document.getElementById('goal');
-const lockGoalBtn = document.getElementById('lockGoal');
-const progressInput = document.getElementById('progress');
-const saveProgressBtn = document.getElementById('saveProgress');
+const workInput  = document.getElementById('workMinutes');
+const breakInput = document.getElementById('breakMinutes');
+const applyBtn   = document.getElementById('applySettings');
 
+let workSecs  = clampInt(parseInt(workInput.value,10), 1, 180) * 60;
+let breakSecs = clampInt(parseInt(breakInput.value,10), 1, 60) * 60;
+let timeLeft  = workSecs;
+
+// ==== 要素 ====
+const timerDisplay   = document.getElementById('timer');
+const startPauseBtn  = document.getElementById('startPause');
+const goalInput      = document.getElementById('goal');
+const lockGoalBtn    = document.getElementById('lockGoal');
+const progressInput  = document.getElementById('progress');
+const saveProgressBtn= document.getElementById('saveProgress');
+
+// ==== 共通 ====
+function clampInt(n, min, max){
+  n = isFinite(n) ? Math.floor(n) : min;
+  return Math.max(min, Math.min(max, n));
+}
 function updateDisplay() {
-  let min = String(Math.floor(timeLeft / 60)).padStart(2,'0');
-  let sec = String(timeLeft % 60).padStart(2,'0');
-  timerDisplay.textContent = `${min}:${sec}`;
+  const m = String(Math.floor(timeLeft/60)).padStart(2,'0');
+  const s = String(timeLeft%60).padStart(2,'0');
+  timerDisplay.textContent = `${m}:${s}`;
 }
 
+// ==== タイマー制御 ====
 function startPauseTimer() {
   if (!isRunning) {
     timerInterval = setInterval(() => {
@@ -137,20 +126,19 @@ function startPauseTimer() {
         isRunning = false;
         playEndMelody();
         if (mode === 'work') {
+          // 作業終了 → 進捗入力へ
           progressInput.disabled = false;
           saveProgressBtn.disabled = false;
           startPauseBtn.disabled = true;
         } else {
+          // 休憩終了 → 作業準備へ
           mode = 'work';
-          timeLeft = parseInt(document.getElementById('workMinutes').value,10) * 60;
-          goalInput.disabled = false;
-          goalInput.value = '';
-          lockGoalBtn.disabled = false;
-          lockedGoal = '';
+          timeLeft = workSecs;
+          goalInput.disabled = false; goalInput.value = '';
+          lockGoalBtn.disabled = false; lockedGoal = '';
           startPauseBtn.disabled = true;
-          progressInput.value = '';
-          progressInput.disabled = true;
-          saveProgressBtn.disabled = true;
+          progressInput.value = ''; progressInput.disabled = true; saveProgressBtn.disabled = true;
+          updateDisplay();
         }
       }
     }, 1000);
@@ -167,7 +155,7 @@ function resetTimer() {
   clearInterval(timerInterval);
   isRunning = false;
   mode = 'work';
-  timeLeft = parseInt(document.getElementById('workMinutes').value,10) * 60;
+  timeLeft = workSecs;
   updateDisplay();
   startPauseBtn.textContent = '▶ 開始';
   goalInput.disabled = false;
@@ -177,6 +165,7 @@ function resetTimer() {
   saveProgressBtn.disabled = true;
 }
 
+// ==== 目標ロック ====
 lockGoalBtn.onclick = () => {
   lockedGoal = goalInput.value.trim();
   if (!lockedGoal) { alert('目標を入力してください'); return; }
@@ -185,67 +174,93 @@ lockGoalBtn.onclick = () => {
   startPauseBtn.disabled = false;
 };
 
+// ==== 開始/停止 ====
 startPauseBtn.addEventListener('click', () => {
-  ensureAudio();
+  ensureAudio();  // 自動再生ブロック対策
   startPauseTimer();
 });
 document.getElementById('reset').onclick = resetTimer;
 
+// ==== 設定を反映（即時） ====
+applyBtn.onclick = () => {
+  // 入力値を安全に取得
+  const newWorkMin  = clampInt(parseInt(workInput.value, 10), 1, 180);
+  const newBreakMin = clampInt(parseInt(breakInput.value,10), 1, 60);
+  // 入力欄に補正後の値を戻す
+  workInput.value  = newWorkMin;
+  breakInput.value = newBreakMin;
+
+  const prevWork  = workSecs;
+  const prevBreak = breakSecs;
+  const prevLeft  = timeLeft;
+
+  // 新しい総時間（秒）に更新
+  workSecs  = newWorkMin  * 60;
+  breakSecs = newBreakMin * 60;
+
+  // 現在のモードに応じて「経過時間」を保ったまま残りを再計算
+  if (mode === 'work') {
+    const elapsed = Math.max(0, prevWork - prevLeft);
+    timeLeft = Math.max(0, workSecs - elapsed);
+  } else {
+    const elapsed = Math.max(0, prevBreak - prevLeft);
+    timeLeft = Math.max(0, breakSecs - elapsed);
+  }
+  updateDisplay();
+};
+
+// ==== 進捗保存 → 休憩開始 ====
 saveProgressBtn.onclick = () => {
-  let progress = progressInput.value.trim();
-  let history = JSON.parse(localStorage.getItem('pomodoroHistory') || '[]');
+  const progress = progressInput.value.trim();
+  const history = JSON.parse(localStorage.getItem('pomodoroHistory') || '[]');
   history.push([new Date().toLocaleString(), lockedGoal, progress]);
   localStorage.setItem('pomodoroHistory', JSON.stringify(history));
   renderHistory();
+
+  // 休憩開始
   mode = 'break';
-  timeLeft = parseInt(document.getElementById('breakMinutes').value,10) * 60;
-  progressInput.disabled = true;
-  saveProgressBtn.disabled = true;
+  timeLeft = breakSecs;
+  progressInput.disabled = true; saveProgressBtn.disabled = true;
   startPauseBtn.disabled = false;
   startPauseTimer();
 };
 
+// ==== 履歴 & CSV ====
 function renderHistory() {
-  let tbody = document.querySelector('#historyTable tbody');
+  const tbody = document.querySelector('#historyTable tbody');
   tbody.innerHTML = '';
-  let history = JSON.parse(localStorage.getItem('pomodoroHistory') || '[]');
+  const history = JSON.parse(localStorage.getItem('pomodoroHistory') || '[]');
   history.forEach(row => {
-    let tr = document.createElement('tr');
-    row.forEach(cell => {
-      let td = document.createElement('td');
-      td.textContent = cell;
-      tr.appendChild(td);
-    });
+    const tr = document.createElement('tr');
+    row.forEach(cell => { const td = document.createElement('td'); td.textContent = cell; tr.appendChild(td); });
     tbody.appendChild(tr);
   });
 }
-
 document.getElementById('downloadCSV').onclick = () => {
-  const history = JSON.parse(localStorage.getItem('pomodoroHistory') || '[]');
-  const rows = [['日時','目標','進捗'], ...history];
-  const csvBody = rows.map(r => r.map(x => `"${String(x||'').replace(/"/g,'""')}"`).join(',')).join('\n');
-  const BOM = '\uFEFF';
-  const blob = new Blob([BOM + csvBody], {type:'text/csv;charset=utf-8;'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'pomodoro_history.csv';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-};
-
-document.getElementById('clearHistory').onclick = () => {
-  if (confirm('履歴を全て削除しますか？')) {
-    localStorage.removeItem('pomodoroHistory');
-    renderHistory();
+  try {
+    const history = JSON.parse(localStorage.getItem('pomodoroHistory') || '[]');
+    const rows = [['日時','目標','進捗'], ...history];
+    if (rows.length === 1) {
+      if (!confirm('履歴が空です。空のCSVをダウンロードしますか？')) return;
+    }
+    const csvBody = rows.map(r => r.map(x => `"${String(x ?? '').replace(/"/g,'""')}"`).join(',')).join('\n');
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvBody], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = 'pomodoro_history.csv'; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
+  } catch (e) {
+    console.error('CSVダウンロード失敗:', e);
+    alert('CSVの作成に失敗しました。履歴に1件追加して再度お試しください。');
   }
 };
+document.getElementById('clearHistory').onclick = () => {
+  if (confirm('履歴を全て削除しますか？')) { localStorage.removeItem('pomodoroHistory'); renderHistory(); }
+};
 
-timeLeft = parseInt(document.getElementById('workMinutes').value,10) * 60;
-renderHistory();
+// ==== 初期表示 ====
 updateDisplay();
+renderHistory();
 </script>
 
 </body>
